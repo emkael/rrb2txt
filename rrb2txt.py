@@ -15,8 +15,9 @@ class RRBPdfFix(object):
     __filepath = ''
     __content = None
 
-    def __init__(self, filepath):
-        self.__filepath = filepath
+    def __init__(self, directory):
+        pair_file = os.path.join(directory, 'pary.txt')
+        self.__filepath = pair_file
         with open(self.__filepath, 'r') as file_content:
             content = file_content.read()
         self.__content = BeautifulSoup(content, 'lxml')
@@ -29,7 +30,7 @@ class RRBPdfFix(object):
                 return True
         return False
 
-    def __fix_adjustements_column(self, header, body):
+    def __fix_adjustments_column(self, header, body):
         if not header.find_all(text='+/-'):
             tag = self.__content.new_tag('td', style='display:none')
             tag.string = '+/-'
@@ -96,7 +97,7 @@ class RRBPdfFix(object):
         header = content.select('thead tr')[0]
         body = content.select('tbody tr')
 
-        self.__fix_adjustements_column(header, body)
+        self.__fix_adjustments_column(header, body)
 
         extra_headers = ['PKL', 'PDF', 'nagroda']
         extra_headers_offset = self.__fix_extra_columns(
@@ -123,15 +124,28 @@ class RRBPdfFix(object):
             self.__write_content(self.__fix_table())
 
 
+def get_content_with_suits(filepath):
+    return re.sub('<img src=".*/(.*).gif" ?/>',
+                  lambda img: img.group(1)[0].capitalize(),
+                  open(filepath, 'r').read())
+
+
 class RRBTxtGen(object):
+
+    __vulnerability_replace = {
+        'obie przed': 'NIKT',
+        'obie po': 'OBIE'
+    }
+    __board_prefix = 'ROZDANIE NR '
 
     def format_boards(self, rows):
         rows = rows[1:4]
+
         header = rows[0][0].split(os.linesep)
-        rows[0][0] = '/'.join(reversed(header[1]
-                                       .replace('obie przed', 'NIKT')
-                                       .replace('obie po', 'OBIE')
-                                       .split(' / ')))
+        for search, replacement in self.__vulnerability_replace.iteritems():
+            header[1] = header[1].replace(search, replacement)
+
+        rows[0][0] = '/'.join(reversed(header[1].split(' / ')))
         rows[1][1] = ''
 
         def split_hand(hand):
@@ -163,7 +177,9 @@ class RRBTxtGen(object):
             return ret
 
         rows = side_rows(rows[0]) + middle_rows(rows[1]) + side_rows(rows[2])
-        header = 'ROZDANIE NR ' + header[0]
+
+        header = self.__board_prefix + header[0]
+
         output = [header, '']
         output.append('{:10s}{:6s}{:10s}'.format(*rows.pop(0)))
         for row in rows:
@@ -171,10 +187,11 @@ class RRBTxtGen(object):
         output.append('')
         return output
 
+    __traveller_header = ['                          ZAPIS      WYNIK  ',
+                          ' NS  EW  KONTRAKT  WIST  NS   EW    NS    EW']
 
     def format_protocols(self, rows):
-        output = ['                          ZAPIS      WYNIK',
-                  ' NS  EW  KONTRAKT  WIST  NS   EW    NS    EW']
+        output = self.__traveller_header
         for row in rows:
             content = []
             if len(row) == 10:
@@ -203,17 +220,30 @@ class RRBTxtGen(object):
                 output.append(
                     u'{:>3s} {:>3s} {:11s}{:^4s}{:>4s}{:>5s} {:>5s} {:>5s}'.format(
                         *content))
-            elif len(row) != 4 and len(row) != 8:
+            elif len(row) != 4 and len(row) != 8:  # TODO: make it a warning
                 print 'protocols: row of unexpected length'
                 print row
         output.append('')
         return output
 
+    __cezar_link_prefix = r'^http://www\.msc\.com\.pl'
+    __result_headers = {
+        'place': 'M-CE',
+        'number': 'NR',
+        'rank': 'WK',
+        'id': 'CEZAR',
+        'adjustments': '+/-',
+        'score': 'WYNIK',
+        'class_points': 'PKL',
+        'points': 'PDF',
+        'prize': 'NAGRODA'
+    }
+    __rank_sum_prefix = 'Suma WK'
 
     def format_results(self, rows):
         rows.pop(0)
         content = []
-        link_regex = re.compile(r'^http://www\.msc\.com\.pl')
+        link_regex = re.compile(self.__cezar_link_prefix)
         cezar_ids = [
             '{:05d}'.format(int(
                 dict(urlparse.parse_qsl(urlparse.urlparse(row.pop()).query))['r']))
@@ -243,38 +273,47 @@ class RRBTxtGen(object):
         wk_sum = sum([float(c[5]) if len(c[5]) else 0.0 for c in content])
         output = []
         name_column = max([len(r[2]) for r in content])
-        output.append('%s %s  %s %s %s' % (
-            'M-CE NR',
-            ' ' * name_column,
-            'WK     CEZAR     +/-   WYNIK PKL',
-            ('{:^' + str(3 * pdf_columns) + 's}').format('PDF'),
-            'NAGRODA'
-        ))
+        output.append(
+            '{:4s} {:2s} {:s} {:6s} {:9s} {:5s} {:5s} {:3s} {:s} {:7s}'.format(
+                self.__result_headers['place'],
+                self.__result_headers['number'],
+                ' ' * (name_column + 1),
+                self.__result_headers['rank'],
+                self.__result_headers['id'],
+                self.__result_headers['adjustments'],
+                self.__result_headers['score'],
+                self.__result_headers['class_points'],
+                ('{:^' + str(3 * pdf_columns) + 's}').format(
+                    self.__result_headers['points']),
+                self.__result_headers['prize']))
         output.append('-' * len(output[-1]))
-        for c in content:
+        for col in content:
             line = (
                 u'{:>3s} {:>3s} {:' + unicode(name_column) +
                 u's} {:>4s} {:2s} {:5s} {:2s} {:>5s} {:>6s} {:>3s}').format(
-                    *(c[0:3] + c[5:7] + c[3:5] + c[8:11]))
+                    *(col[0:3] + col[5:7] + col[3:5] + col[8:11]))
             pdf = (
                 u' {:' + unicode(3 * pdf_columns) + u's}').format(
-                    ''.join([u'{:>3s}'.format(cc) for cc in c[11:-1]]))
+                    ''.join([u'{:>3s}'.format(cc) for cc in col[11:-1]]))
             line += pdf
-            line += u' {:>6s}'.format(c[-1])
+            line += u' {:>6s}'.format(col[-1])
             output.append(line)
         output.append(' ' * (8 + name_column) + '-----')
         output.append(
             ('{:>' + str(13 + name_column) + 's}').format(
-                'Suma WK = {:.1f}'.format(wk_sum)))
+                self.__rank_sum_prefix + ' = {:.1f}'.format(wk_sum)))
         return output
 
+    __recap_header = 'WYNIKI PARY NR '
+    __recap_table_header = ['RND', 'PRZECIWNIK', 'RZD', ' ', 'KONTRAKT',
+                            'WIST', 'ZAPIS', 'WYNIK ', u'/ BIEŻĄCY']
 
     def format_histories(self, rows):
         header = rows.pop(0)[0]
         rows.pop(0)
         if ' pauza ' in header:
             return []
-        output = ['WYNIKI PARY NR ' + header,
+        output = [self.__recap_header + header,
                   '']
         content_rows = []
         add_separator = False
@@ -300,14 +339,11 @@ class RRBTxtGen(object):
                     content_rows.append(
                         ['', '', '', '', '', '', '', '-------', '--------'])
                 content_rows.append(content)
-            else:
+            else:  # TODO: make a warning of it
                 print 'histories: unexpected row length'
                 print row
         column_width = max([len(r[1]) for r in content_rows])
-        content_rows = [[
-            'RND', 'PRZECIWNIK', 'RZD', ' ', 'KONTRAKT', 'WIST',
-            'ZAPIS', 'WYNIK ', u'/ BIEŻĄCY'
-        ]] + content_rows
+        content_rows = [self.__recap_table_header] + content_rows
         for content in content_rows:
             if content[6]:
                 score_align = u'>' if content[6][0] == u'-' else (
@@ -331,80 +367,69 @@ class RRBTxtGen(object):
     def get_rows(self, content):
         soup = BeautifulSoup(content, 'lxml')
         output = []
-        link_regex = re.compile(r'^http://www\.msc\.com\.pl')
+        link_regex = re.compile(self.__cezar_link_prefix)
         header = soup.find('h2')
         if header:
             output.append([header.text])
         for table_row in soup.find_all('tr'):
-            row = map(lambda t:
-                      os.linesep.join(t.stripped_strings),
-                      table_row.find_all('td'))
-            row = row + map(lambda l:
-                            l['href'],
-                            table_row.find_all('a', {'href': link_regex}))
+            row = [
+                os.linesep.join(t.stripped_strings)
+                for t in table_row.find_all('td')]
+            row = row + [l['href'] for l
+                         in table_row.find_all('a', {'href': link_regex})]
             output.append(row)
         return output
 
 
-    def get_content(self, filepath):
-        return re.sub('<img src=".*/(.*).gif" ?/>',
-                      lambda img: img.group(1)[0].capitalize(),
-                      open(filepath, 'r').read())
-
-
-    def get_header(self, directory):
+    def get_header(self):
         soup = BeautifulSoup(
-            open(os.path.join(directory, 'index.html'), 'r').read(), 'lxml')
+            open(os.path.join(self.__directory, 'index.html'), 'r').read(), 'lxml')
         return [node.text for node in soup.select('#header *')]
 
 
-    def get_files(self, directory):
-        return dict(map(lambda (key, val): (
-            key,
-            reduce(list.__add__, map(
-                lambda v: sorted(glob(os.path.join(directory, v))), val), [])),
-                        {
-                            'boards': ['d?.txt', 'd??.txt'],
-                            'protocols': ['p?.txt', 'p??.txt'],
-                            'histories': ['h?.txt', 'h??.txt'],
-                            'results': ['pary.txt'],
-                        }.items()))
+    __file_mapping = {
+        'boards': ['d?.txt', 'd??.txt'],
+        'protocols': ['p?.txt', 'p??.txt'],
+        'histories': ['h?.txt', 'h??.txt'],
+        'results': ['pary.txt'],
+    }
 
-
-    def compile_dir(self, directory):
-        files = self.get_files(directory)
+    def get_files(self):
         return dict(
-            map(lambda (key, val):
-                (
-                    key,
-                    list(
-                        chain(
-                            *list(
-                                i.next() for i in cycle(
-                                    map(lambda v:
-                                        iter(
-                                            map(lambda file:
-                                                self.format_rows(
-                                                    self.get_rows(
-                                                        self.get_content(file)
-                                                    ),
-                                                    v),
-                                                files[v])),
-                                        val))
-                            )
-                        )
-                    )
-                ),
-                {
-                    'P': ['boards', 'protocols'],
-                    'H': ['histories'],
-                    'W': ['results']
-                }.items()))
+            [(key, reduce(list.__add__,
+                          [sorted(glob(os.path.join(self.__directory, v)))
+                           for v in val]))
+             for (key, val) in self.__file_mapping.items()])
 
-    def generate(self, directory):
-        header = self.get_header(directory) + ['']
-        output = self.compile_dir(directory)
-        file_prefix = os.path.dirname(directory).split('/')[-1]
+
+    __output_mapping = {
+        'P': ['boards', 'protocols'],
+        'H': ['histories'],
+        'W': ['results']
+    }
+
+    def compile_dir(self):
+        files = self.get_files()
+        return dict([(
+            key,  # I have no fucking clue about what follows
+            list(chain(*list(i.next() for i in cycle([
+                iter([self.format_rows(
+                    self.get_rows(
+                        get_content_with_suits(file)), v)
+                      for file in files[v]])
+                for v in val]))))
+            ) for (key, val) in self.__output_mapping.items()])
+
+    __directory = ''
+
+    def __init__(self, directory):
+        self.__directory = directory
+
+    def generate(self):
+        file_prefix = os.path.dirname(self.__directory).split('/')[-1]
+
+        header = self.get_header() + ['']
+        output = self.compile_dir()
 
         for filepath, rows in output.iteritems():
             output_file = open(file_prefix + filepath + '.txt', 'w')
@@ -413,12 +438,14 @@ class RRBTxtGen(object):
             for row in rows:
                 output_file.write(row.encode('windows-1250') + '\n')
 
+def main():
+    directory = sys.argv[1] if len(sys.argv) > 1 else '.'
 
-directory = sys.argv[1] if len(sys.argv) > 1 else '.'
-pair_file = os.path.join(directory, 'pary.txt')
+    rrb_pdf = RRBPdfFix(directory)
+    rrb_pdf.fixpdf()
 
-rrb_pdf = RRBPdfFix(pair_file)
-rrb_pdf.fixpdf()
+    rrb_gen = RRBTxtGen(directory)
+    rrb_gen.generate()
 
-rrb_gen = RRBTxtGen()
-rrb_gen.generate(directory)
+if __name__ == '__main__':
+    main()
