@@ -1,17 +1,10 @@
-# -*- mode: python -*-
-
-block_cipher = None
-
-
+import os
 a = Analysis(['rrb2txt.py'],
-             pathex=['f:\\Brydz\\RRBridge'],
+             pathex=[os.path.abspath('.')],
              hiddenimports=[],
              hookspath=None,
-             runtime_hooks=None,
-             excludes=None,
-             cipher=block_cipher)
-pyz = PYZ(a.pure,
-             cipher=block_cipher)
+             runtime_hooks=None)
+pyz = PYZ(a.pure)
 exe = EXE(pyz,
           a.scripts,
           a.binaries,
