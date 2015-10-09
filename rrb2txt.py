@@ -189,6 +189,7 @@ class RRBTxtGen(object):
 
     __traveller_header = ['                          ZAPIS      WYNIK  ',
                           ' NS  EW  KONTRAKT  WIST  NS   EW    NS    EW']
+    __traveller_row = u'{:>3s}{:>4s} {:11s}{:^4s}{:>4s}{:>5s}{:>6s}{:>6s}'
 
     def format_protocols(self, rows):
         output = self.__traveller_header
@@ -217,9 +218,8 @@ class RRBTxtGen(object):
                     '{:.1f}'.format(float(row[8]))
                 ]
             if content:
-                output.append(
-                    u'{:>3s} {:>3s} {:11s}{:^4s}{:>4s}{:>5s} {:>5s} {:>5s}'.format(
-                        *content))
+                output.append(self.__traveller_row.format(
+                    *content))
             elif len(row) != 4 and len(row) != 8:  # TODO: make it a warning
                 print 'protocols: row of unexpected length'
                 print row
@@ -246,7 +246,8 @@ class RRBTxtGen(object):
         link_regex = re.compile(self.__cezar_link_prefix)
         cezar_ids = [
             '{:05d}'.format(int(
-                dict(urlparse.parse_qsl(urlparse.urlparse(row.pop()).query))['r']))
+                dict(urlparse.parse_qsl(
+                    urlparse.urlparse(row.pop()).query))['r']))
             if re.match(link_regex, row[-1])
             else ''
             for row in rows]
@@ -264,11 +265,13 @@ class RRBTxtGen(object):
                                    row[1:3] + content[-1][6:7] +
                                    row[3:4] + [''] * (3 + pdf_columns))
                 else:
-                    content.append([''] * 2 + row[0:1] + [
-                        cezar_ids.pop(0)] + row[1:4] + [''] * (4 + pdf_columns))
+                    content.append([''] * 2 + row[0:1] +
+                                   [cezar_ids.pop(0)] + row[1:4] +
+                                   [''] * (4 + pdf_columns))
             elif length == 3:
                 content.append([''] * 2 + row[0:1] +
-                               [cezar_ids.pop(0)] + row[1:3] + content[-1][6:8] +
+                               [cezar_ids.pop(0)] + row[1:3] +
+                               content[-1][6:8] +
                                [''] * (3 + pdf_columns))
         wk_sum = sum([float(c[5]) if len(c[5]) else 0.0 for c in content])
         output = []
@@ -359,10 +362,8 @@ class RRBTxtGen(object):
         output.append('')
         return output
 
-
     def format_rows(self, rows, rowtype):
         return getattr(self, 'format_' + rowtype)(rows)
-
 
     def get_rows(self, content):
         soup = BeautifulSoup(content, 'lxml')
@@ -380,12 +381,11 @@ class RRBTxtGen(object):
             output.append(row)
         return output
 
-
     def get_header(self):
         soup = BeautifulSoup(
-            open(os.path.join(self.__directory, 'index.html'), 'r').read(), 'lxml')
+            open(os.path.join(self.__directory, 'index.html'), 'r').read(),
+            'lxml')
         return [node.text for node in soup.select('#header *')]
-
 
     __file_mapping = {
         'boards': ['d?.txt', 'd??.txt'],
@@ -400,7 +400,6 @@ class RRBTxtGen(object):
                           [sorted(glob(os.path.join(self.__directory, v)))
                            for v in val]))
              for (key, val) in self.__file_mapping.items()])
-
 
     __output_mapping = {
         'P': ['boards', 'protocols'],
@@ -437,6 +436,7 @@ class RRBTxtGen(object):
                 output_file.write(line.encode('windows-1250') + '\n')
             for row in rows:
                 output_file.write(row.encode('windows-1250') + '\n')
+
 
 def main():
     directory = sys.argv[1] if len(sys.argv) > 1 else '.'
