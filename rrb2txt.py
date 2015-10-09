@@ -192,7 +192,7 @@ class RRBTxtGen(object):
     __traveller_row = u'{:>3s}{:>4s} {:11s}{:^4s}{:>4s}{:>5s}{:>6s}{:>6s}'
 
     def format_protocols(self, rows):
-        output = self.__traveller_header
+        output = self.__traveller_header[:]
         for row in rows:
             content = []
             if len(row) == 10:
