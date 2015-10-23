@@ -4,6 +4,7 @@ import sys
 import os
 import re
 import urlparse
+import lxml
 
 from bs4 import BeautifulSoup, Comment
 from glob import glob
@@ -425,13 +426,18 @@ class RRBTxtGen(object):
         self.__directory = directory
 
     def generate(self):
-        file_prefix = os.path.dirname(self.__directory).split('/')[-1]
+        file_prefix = os.path.abspath(
+            self.__directory).strip(os.sep).split(os.sep)[-1]
 
         header = self.get_header() + ['']
         output = self.compile_dir()
 
         for filepath, rows in output.iteritems():
-            output_file = open(file_prefix + filepath + '.txt', 'w')
+            output_file = open(os.path.join(
+                os.path.abspath(self.__directory),
+                file_prefix) + filepath + '.txt', 'w')
+            print os.path.abspath(self.__directory), file_prefix
+            print os.path.join(os.path.abspath(self.__directory), file_prefix)
             for line in header:
                 output_file.write(line.encode('windows-1250') + '\n')
             for row in rows:
